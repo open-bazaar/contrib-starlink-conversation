@@ -1,0 +1,76 @@
+[project]
+name = "bazaar-contrib-starlink-conversation"
+version = "0.3.0rc1"
+description = "The conversations of a node's agents as its Bazaar Compute server reads them through starlink: listed, read, searched, their attachments and their reminders"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.15"
+dependencies = [
+    "bazaar-core~=0.3.0rc1",
+    "bazaar-contrib-messages~=0.3.0rc1",
+    "bazaar-contrib-reminder~=0.3.0rc1",
+    "bazaar-contrib-sidecar~=0.3.0rc8",
+    "bazaar-contrib-storage~=0.3.0rc1",
+]
+
+[project.urls]
+Repository = "https://github.com/open-bazaar/contrib-starlink-conversation"
+
+[project.entry-points."bazaar_compute_node.contribs"]
+starlink-conversation = "bazaar_contrib_starlink_conversation:conversation"
+
+[project.entry-points."bazaar_compute_node.remotes"]
+conversation = "bazaar_contrib_starlink_conversation:remote"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:anyio"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.pyright]
+include = ["src", "tests", "scripts"]
+extraPaths = ["tests/fixtures/switchboard/src"]
+pythonVersion = "3.15"
+pythonPlatform = "All"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
+reportMatchNotExhaustive = "error"
+reportUnreachable = "warning"
+reportUnusedFunction = "warning"
+reportUnusedVariable = "warning"
+
+[tool.ruff.lint]
+extend-select = ["ASYNC"]
+
+[tool.uv.sources]
+switchboard = { path = "tests/fixtures/switchboard", editable = true }
+
+[dependency-groups]
+dev = [
+    "bazaar-compute[node]~=0.3.0rc24",
+    "bazaar-contrib-agent~=0.3.0rc24",
+    "bazaar-contrib-agent-command~=0.3.0rc24",
+    "bazaar-contrib-collaboration~=0.3.0rc24",
+    "bazaar-contrib-config-filesystem~=0.3.0rc1",
+    "bazaar-contrib-logging~=0.3.0rc1",
+    "bazaar-contrib-messages-node~=0.3.0rc24",
+    "bazaar-contrib-sidecar-unix~=0.3.0rc11; sys_platform != 'win32'",
+    "bazaar-contrib-sidecar-windows~=0.3.0rc11; sys_platform == 'win32'",
+    "bazaar-contrib-sqlite~=0.3.0rc1",
+    "bazaar-contrib-status~=0.3.0rc1",
+    "bazaar-contrib-timer-wheel~=0.3.0rc1",
+    "blockbuster>=1.5.29,<1.6",
+    "pyright==1.1.414",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.9.0",
+    "switchboard",
+    "tomli-w>=1.2.0",
+]

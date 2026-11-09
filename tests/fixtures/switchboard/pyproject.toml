@@ -1,0 +1,18 @@
+[project]
+name = "switchboard"
+version = "0.1.0"
+description = "A channel and a runtime for an agent to run on a real node in starlink-conversation's tests"
+requires-python = ">=3.15"
+dependencies = [
+    "bazaar-contrib-channel~=0.3.0rc24",
+    "bazaar-contrib-harness~=0.3.0rc24",
+    "pydantic>=2.12.0",
+]
+
+[project.entry-points."bazaar_compute_node.contribs"]
+switchboard-channel-builder = "switchboard:channel_builder"
+switchboard-runtime-builder = "switchboard:runtime_builder"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
