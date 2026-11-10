@@ -291,6 +291,54 @@ def _name(
     return (None if peer is None else peer.display_name) or handle
 
 
+async def _names(
+    session: Session, agent_id: str, threads: Sequence[str]
+) -> dict[str, tuple[Kind, str | None]]:
+    """What kind each of the conversations is and what it is called, as
+    `conversations` names them, read in the caller's session."""
+
+    rows = await session.select(
+        Select(
+            table="threads",
+            alias="thread",
+            columns={
+                "thread_id": Column(name="id", table="thread"),
+                "kind": Column(name="target_kind", table="channel"),
+                "display_name": Column(name="target_display_name", table="channel"),
+                "handle": Column(name="target_handle", table="channel"),
+            },
+            joins=(_channel(agent_id),),
+            where=All(
+                conditions=(
+                    _equal("agent_id", agent_id, "thread"),
+                    In(
+                        expression=Column(name="id", table="thread"),
+                        values=tuple(threads),
+                    ),
+                )
+            ),
+        )
+    )
+    spoken = await _ends(
+        session,
+        agent_id,
+        tuple(cast(str, row["thread_id"]) for row in rows if row["kind"] == "dm"),
+        latest=True,
+    )
+    return {
+        cast(str, row["thread_id"]): (
+            cast(Kind, row["kind"]),
+            _name(
+                cast(Kind, row["kind"]),
+                cast(str | None, row["display_name"]),
+                cast(str | None, row["handle"]),
+                spoken.get(cast(str, row["thread_id"]), ()),
+            ),
+        )
+        for row in rows
+    }
+
+
 def _preview(said: _Said) -> Preview:
     return Preview(
         message_id=said.message_id,
@@ -847,42 +895,10 @@ class Store:
                 )
             )
             hits = [(_said(row), cast(float, row["score"])) for row in rows[:limit]]
-            threads = tuple(dict.fromkeys(said.thread_id for said, _ in hits))
-            sessions = {
-                cast(str, row["thread_id"]): row
-                for row in await session.select(
-                    Select(
-                        table="threads",
-                        alias="thread",
-                        columns={
-                            "thread_id": Column(name="id", table="thread"),
-                            "display_name": Column(
-                                name="target_display_name", table="channel"
-                            ),
-                            "handle": Column(name="target_handle", table="channel"),
-                        },
-                        joins=(_channel(self.agent_id),),
-                        where=All(
-                            conditions=(
-                                _equal("agent_id", self.agent_id, "thread"),
-                                In(
-                                    expression=Column(name="id", table="thread"),
-                                    values=threads,
-                                ),
-                            )
-                        ),
-                    )
-                )
-            }
-            spoken = await _ends(
+            names = await _names(
                 session,
                 self.agent_id,
-                tuple(
-                    dict.fromkeys(
-                        said.thread_id for said, _ in hits if said.kind == "dm"
-                    )
-                ),
-                latest=True,
+                tuple(dict.fromkeys(said.thread_id for said, _ in hits)),
             )
             found: list[Hit] = []
             for said, relevance in hits:
@@ -901,12 +917,7 @@ class Store:
                     Hit(
                         message_id=said.message_id,
                         thread_id=said.thread_id,
-                        conversation=_name(
-                            said.kind,
-                            cast(str | None, sessions[said.thread_id]["display_name"]),
-                            cast(str | None, sessions[said.thread_id]["handle"]),
-                            spoken.get(said.thread_id, ()),
-                        ),
+                        conversation=names[said.thread_id][1],
                         kind=said.kind,
                         channel=said.channel,
                         direction=said.direction,
@@ -981,8 +992,8 @@ class Store:
         )
 
     async def reminders(self, thread_id: str | None) -> tuple[Reminder, ...]:
-        rows = await self._database.read(
-            lambda session: session.select(
+        async def read(session: Session) -> tuple[Reminder, ...]:
+            rows = await session.select(
                 Select(
                     table="reminders",
                     where=All(
@@ -1002,15 +1013,23 @@ class Store:
                     ),
                 )
             )
-        )
-        return tuple(
-            Reminder(
-                reminder_id=cast(str, row["reminder_id"]),
-                thread_id=cast(str, row["owner_thread_id"]),
-                title=cast(str, row["title"]),
-                next_fire_at_ms=cast(int, row["next_fire_at_ms"]),
-                repeat_rule=cast(str | None, row["repeat_rule"]),
-                timezone=cast(str, row["timezone"]),
+            names = await _names(
+                session,
+                self.agent_id,
+                tuple(dict.fromkeys(cast(str, row["owner_thread_id"]) for row in rows)),
             )
-            for row in rows
-        )
+            return tuple(
+                Reminder(
+                    reminder_id=cast(str, row["reminder_id"]),
+                    thread_id=cast(str, row["owner_thread_id"]),
+                    conversation=names[cast(str, row["owner_thread_id"])][1],
+                    kind=names[cast(str, row["owner_thread_id"])][0],
+                    title=cast(str, row["title"]),
+                    next_fire_at_ms=cast(int, row["next_fire_at_ms"]),
+                    repeat_rule=cast(str | None, row["repeat_rule"]),
+                    timezone=cast(str, row["timezone"]),
+                )
+                for row in rows
+            )
+
+        return await self._database.read(read, snapshot=True)
