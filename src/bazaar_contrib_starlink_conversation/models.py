@@ -139,6 +139,10 @@ class Segment:
 class Reminder:
     reminder_id: str
     thread_id: str
+    # what the conversation is called and what kind it is, as
+    # `conversations` names them
+    conversation: str | None
+    kind: Kind
     title: str
     next_fire_at_ms: int
     # every:<N><m|h|d>, daily@HH:MM or weekly:<day>@HH:MM

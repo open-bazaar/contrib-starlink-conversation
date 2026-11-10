@@ -329,6 +329,11 @@ async def test_the_server_reads_an_agents_conversations(tmp_path: Path):
             group.thread_id,
             direct.thread_id,
         ]
+        # each named as the list names its conversation, of its kind
+        assert [(reminder.conversation, reminder.kind) for reminder in reminders] == [
+            (group.name, group.kind),
+            (direct.name, direct.kind),
+        ]
         assert reminders[0].repeat_rule == "daily@09:00"
         assert reminders[0].timezone == "Asia/Shanghai"
         assert (
