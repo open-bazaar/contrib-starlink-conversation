@@ -54,18 +54,17 @@ switchboard = { path = "tests/fixtures/switchboard", editable = true }
 
 [dependency-groups]
 dev = [
-    "bazaar-compute[node]~=0.3.0rc24",
-    "bazaar-contrib-agent~=0.3.0rc24",
-    "bazaar-contrib-agent-command~=0.3.0rc24",
+    "bazaar-compute[node]~=0.3.0rc26",
+    "bazaar-contrib-agent~=0.3.0rc26",
     "bazaar-contrib-collaboration~=0.3.0rc24",
     "bazaar-contrib-config-filesystem~=0.3.0rc1",
     "bazaar-contrib-logging~=0.3.0rc1",
-    "bazaar-contrib-messages-node~=0.3.0rc24",
+    "bazaar-contrib-messages~=0.3.0rc26",
     "bazaar-contrib-sidecar-unix~=0.3.0rc11; sys_platform != 'win32'",
     "bazaar-contrib-sidecar-windows~=0.3.0rc11; sys_platform == 'win32'",
     "bazaar-contrib-sqlite~=0.3.0rc1",
     "bazaar-contrib-status~=0.3.0rc1",
-    "bazaar-contrib-timer-wheel~=0.3.0rc1",
+    "bazaar-contrib-timer~=0.3.0rc26",
     "blockbuster>=1.5.29,<1.6",
     "pyright==1.1.414",
     "pytest>=8.3.0",
