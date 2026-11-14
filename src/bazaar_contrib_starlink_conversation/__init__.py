@@ -34,5 +34,13 @@ conversation = Contrib(
 )
 remote = RemoteEntry(
     CONVERSATION,
-    ("conversations", "conversation", "history", "search", "attachment", "reminders"),
+    (
+        "conversations",
+        "conversation",
+        "history",
+        "timeline",
+        "search",
+        "attachment",
+        "reminders",
+    ),
 )

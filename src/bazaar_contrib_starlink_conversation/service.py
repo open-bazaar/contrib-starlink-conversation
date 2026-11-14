@@ -39,7 +39,7 @@ class Conversations:
     async def conversations(
         self,
         agent_id: str,
-        review: Literal["approved", "pending"],
+        review: Literal["approved", "pending", "denied"],
         offset: int = 0,
         limit: int = 50,
     ) -> Page:
@@ -56,6 +56,19 @@ class Conversations:
         limit: int = 50,
     ) -> History:
         return await Store(self._database, agent_id).history(thread_id, around, limit)
+
+    async def timeline(
+        self,
+        agent_id: str,
+        thread_id: str,
+        position: tuple[int, str, str] | None = None,
+        side: Literal["before", "after", "around"] = "around",
+        limit: int = 50,
+        around: str | None = None,
+    ) -> History:
+        return await Store(self._database, agent_id).history(
+            thread_id, around, limit, chronological=True, position=position, side=side
+        )
 
     async def search(
         self,
