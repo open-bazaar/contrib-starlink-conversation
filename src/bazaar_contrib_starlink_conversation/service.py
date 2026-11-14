@@ -4,15 +4,19 @@ still to fire, read from the node's database whether or not the agent runs."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 lazy import asyncio
 lazy import base64
 lazy import os
 lazy from pathlib import Path
 lazy from typing import Literal
 
+from bazaar_contrib_channel import ChannelBuilders, ChannelTarget
+lazy from bazaar_contrib_agent import AgentConfig
+lazy from bazaar_contrib_agent.command import AgentManagement
 lazy from bazaar_contrib_storage import Database
 
-lazy from .models import Detail, Found, History, Page, Reminder, Segment
+lazy from .models import Conversation, Detail, Found, History, Page, Reminder, Segment
 lazy from .store import Store
 
 # a segment encoded as base64 stays within the 1 MiB a call carries back
@@ -33,20 +37,82 @@ def _segment(agent_id: str, relative_path: str, offset: int) -> tuple[bytes, int
 
 
 class Conversations:
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self, database: Database, agents: AgentManagement, channels: ChannelBuilders
+    ) -> None:
         self._database = database
+        self._agents = agents
+        self._channels = channels
+
+    def _conversation(
+        self, agent: AgentConfig | None, conversation: Conversation
+    ) -> Conversation:
+        builder = next(
+            (
+                item
+                for item in self._channels.all()
+                if item.kind == conversation.channel
+            ),
+            None,
+        )
+        if builder is None:
+            return conversation
+        configs = (
+            tuple(
+                provider.model_dump(exclude={"kind"})
+                for provider in agent.channel
+                if provider.kind == conversation.channel
+            )
+            if agent is not None
+            else ()
+        )
+        return replace(
+            conversation,
+            conversation_key=builder.conversation_key(
+                ChannelTarget(
+                    kind=conversation.kind, thread_id=conversation.provider_thread_id
+                ),
+                configs,
+            ),
+        )
 
     async def conversations(
         self,
         agent_id: str,
-        review: Literal["approved", "pending"],
+        review: Literal["approved", "pending", "denied"],
         offset: int = 0,
         limit: int = 50,
     ) -> Page:
-        return await Store(self._database, agent_id).page(review, offset, limit)
+        page = await Store(self._database, agent_id).page(review, offset, limit)
+        agent = next(
+            (
+                item
+                for item in (await self._agents.snapshot()).agents
+                if item.id == agent_id
+            ),
+            None,
+        )
+        return replace(
+            page,
+            conversations=tuple(
+                self._conversation(agent, conversation)
+                for conversation in page.conversations
+            ),
+        )
 
     async def conversation(self, agent_id: str, thread_id: str) -> Detail:
-        return await Store(self._database, agent_id).detail(thread_id)
+        detail = await Store(self._database, agent_id).detail(thread_id)
+        agent = next(
+            (
+                item
+                for item in (await self._agents.snapshot()).agents
+                if item.id == agent_id
+            ),
+            None,
+        )
+        return replace(
+            detail, conversation=self._conversation(agent, detail.conversation)
+        )
 
     async def history(
         self,
@@ -56,6 +122,19 @@ class Conversations:
         limit: int = 50,
     ) -> History:
         return await Store(self._database, agent_id).history(thread_id, around, limit)
+
+    async def timeline(
+        self,
+        agent_id: str,
+        thread_id: str,
+        position: tuple[int, str, str] | None = None,
+        side: Literal["before", "after", "around"] = "around",
+        limit: int = 50,
+        around: str | None = None,
+    ) -> History:
+        return await Store(self._database, agent_id).history(
+            thread_id, around, limit, chronological=True, position=position, side=side
+        )
 
     async def search(
         self,

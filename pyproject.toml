@@ -1,6 +1,6 @@
 [project]
 name = "bazaar-contrib-starlink-conversation"
-version = "0.3.0rc2"
+version = "0.3.0rc3"
 description = "The conversations of a node's agents as its Bazaar Compute server reads them through starlink: listed, read, searched, their attachments and their reminders"
 readme = "README.md"
 license = "Apache-2.0"
@@ -8,6 +8,8 @@ license-files = ["LICENSE"]
 requires-python = ">=3.15"
 dependencies = [
     "bazaar-core~=0.3.0rc1",
+    "bazaar-contrib-agent~=0.3.0rc26",
+    "bazaar-contrib-channel~=0.3.0rc33",
     "bazaar-contrib-messages~=0.3.0rc1",
     "bazaar-contrib-reminder~=0.3.0rc1",
     "bazaar-contrib-sidecar~=0.3.0rc8",

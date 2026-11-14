@@ -62,6 +62,8 @@ class _Said:
     """A message as its row has it."""
 
     message_id: str
+    provider_message_id: str | None
+    edit_version: str | None
     seq: int
     thread_id: str
     channel: str
@@ -146,6 +148,8 @@ def _said_columns() -> dict[str, Expression]:
             name: Column(name=name, table="message")
             for name in (
                 "message_id",
+                "provider_message_id",
+                "edit_version",
                 "seq",
                 "thread_id",
                 "channel",
@@ -171,6 +175,8 @@ def _said(row: Record) -> _Said:
     )
     return _Said(
         message_id=cast(str, row["message_id"]),
+        provider_message_id=cast(str | None, row["provider_message_id"]),
+        edit_version=cast(str | None, row["edit_version"]),
         seq=cast(int, row["seq"]),
         thread_id=cast(str, row["thread_id"]),
         channel=cast(str, row["channel"]),
@@ -342,6 +348,7 @@ async def _names(
 def _preview(said: _Said) -> Preview:
     return Preview(
         message_id=said.message_id,
+        direction=said.direction,
         sender=said.sender,
         sender_kind=said.sender_kind,
         at_ms=said.at_ms,
@@ -419,6 +426,8 @@ def _directory(agent_id: str) -> dict[str, Select]:
                     for alias, name in (
                         ("kind", "target_kind"),
                         ("channel", "channel"),
+                        ("provider_thread_id", "provider_thread_id"),
+                        ("channel_identity", "channel_identity"),
                         ("review", "review"),
                         ("display_name", "target_display_name"),
                         ("handle", "target_handle"),
@@ -478,6 +487,8 @@ def _conversation(
     handle = cast(str | None, row["handle"])
     return Conversation(
         thread_id=cast(str, row["thread_id"]),
+        provider_thread_id=cast(str, row["provider_thread_id"]),
+        channel_identity=cast(str | None, row["channel_identity"]),
         name=_name(kind, cast(str | None, row["display_name"]), handle, spoken),
         handle=handle,
         kind=kind,
@@ -498,9 +509,7 @@ class Store:
         self._database = database
         self.agent_id = agent_id
 
-    async def page(
-        self, review: Literal["approved", "pending"], offset: int, limit: int
-    ) -> Page:
+    async def page(self, review: Review, offset: int, limit: int) -> Page:
         async def read(session: Session) -> Page:
             counts = await session.select(
                 Select(
@@ -598,7 +607,16 @@ class Store:
 
         return await self._database.read(read, snapshot=True)
 
-    async def history(self, thread_id: str, around: str | None, limit: int) -> History:
+    async def history(
+        self,
+        thread_id: str,
+        around: str | None,
+        limit: int,
+        *,
+        chronological: bool = False,
+        position: tuple[int, str, str] | None = None,
+        side: Literal["before", "after", "around"] = "around",
+    ) -> History:
         scope = All(
             conditions=(
                 _history(self.agent_id),
@@ -607,29 +625,47 @@ class Store:
         )
 
         async def read(session: Session) -> History:
+            order: tuple[Expression, ...] = (
+                (
+                    _said_at(),
+                    Call(
+                        name="coalesce",
+                        arguments=(
+                            Column(name="provider_message_id", table="message"),
+                            Column(name="message_id", table="message"),
+                        ),
+                    ),
+                    Call(
+                        name="coalesce",
+                        arguments=(
+                            Column(name="edit_version", table="message"),
+                            Value(value=""),
+                        ),
+                    ),
+                )
+                if chronological
+                else (Column(name="seq", table="message"),)
+            )
             (bounds,) = await session.select(
                 Select(
                     table="messages",
                     alias="message",
-                    columns={
-                        "first": Call(
-                            name="min", arguments=(Column(name="seq", table="message"),)
-                        ),
-                        "last": Call(
-                            name="max", arguments=(Column(name="seq", table="message"),)
-                        ),
-                        "total": Call(name="count"),
-                    },
+                    columns={"total": Call(name="count")},
                     where=scope,
                 )
             )
-            offset = 0
+            total = cast(int, bounds["total"])
+            offset = max(0, total - limit) if chronological else 0
+            values: tuple[Scalar, ...] | None = position
             if around is not None:
                 anchor = await session.select(
                     Select(
                         table="messages",
                         alias="message",
-                        columns={"seq": Column(name="seq", table="message")},
+                        columns={
+                            f"order_{i}": expression
+                            for i, expression in enumerate(order)
+                        },
                         where=All(
                             conditions=(scope, _equal("message_id", around, "message"))
                         ),
@@ -639,26 +675,67 @@ class Store:
                     raise ValueError(
                         f"message not found in this conversation: {around}"
                     )
-                (position,) = await session.select(
+                values = tuple(anchor[0][f"order_{i}"] for i in range(len(order)))
+            taken = limit
+            if values is not None:
+                comparisons = tuple(
+                    All(
+                        conditions=(
+                            *(
+                                Compare(
+                                    left=order[j],
+                                    operator="=",
+                                    right=Value(value=values[j]),
+                                )
+                                for j in range(i)
+                            ),
+                            Compare(
+                                left=expression,
+                                operator="<",
+                                right=Value(value=values[i]),
+                            ),
+                        )
+                    )
+                    for i, expression in enumerate(order)
+                )
+                (before,) = await session.select(
                     Select(
                         table="messages",
                         alias="message",
                         columns={"total": Call(name="count")},
-                        where=All(
-                            conditions=(
-                                scope,
-                                Compare(
-                                    left=Column(name="seq", table="message"),
-                                    operator="<=",
-                                    right=Value(value=anchor[0]["seq"]),
-                                ),
-                            )
-                        ),
+                        where=All(conditions=(scope, AnyOf(conditions=comparisons))),
                     )
                 )
-                # the message in the middle, or as near it as the ends allow
-                start = max(cast(int, position["total"]) - limit // 2, 1)
-                offset = min(start, max(cast(int, bounds["total"]) - limit + 1, 1)) - 1
+                count = cast(int, before["total"])
+                if side == "before":
+                    offset = max(0, count - limit)
+                    taken = count - offset
+                elif side == "after":
+                    (equal,) = await session.select(
+                        Select(
+                            table="messages",
+                            alias="message",
+                            columns={"total": Call(name="count")},
+                            where=All(
+                                conditions=(
+                                    scope,
+                                    *(
+                                        Compare(
+                                            left=expression,
+                                            operator="=",
+                                            right=Value(value=value),
+                                        )
+                                        for expression, value in zip(
+                                            order, values, strict=True
+                                        )
+                                    ),
+                                )
+                            ),
+                        )
+                    )
+                    offset = count + cast(int, equal["total"])
+                else:
+                    offset = max(0, min(count - limit // 2, total - limit))
             messages = tuple(
                 _said(row)
                 for row in await session.select(
@@ -667,10 +744,10 @@ class Store:
                         alias="message",
                         columns=_said_columns(),
                         where=scope,
-                        order_by=(
-                            Sort(expression=Column(name="seq", table="message")),
+                        order_by=tuple(
+                            Sort(expression=expression) for expression in order
                         ),
-                        limit=limit,
+                        limit=taken,
                         offset=offset,
                     )
                 )
@@ -707,6 +784,8 @@ class Store:
                 messages=tuple(
                     Entry(
                         message_id=message.message_id,
+                        provider_message_id=message.provider_message_id,
+                        edit_version=message.edit_version,
                         seq=message.seq,
                         direction=message.direction,
                         sender=message.sender,
@@ -730,10 +809,8 @@ class Store:
                     )
                     for message in messages
                 ),
-                has_before=bool(messages)
-                and messages[0].seq > cast(int, bounds["first"]),
-                has_after=bool(messages)
-                and messages[-1].seq < cast(int, bounds["last"]),
+                has_before=offset > 0,
+                has_after=offset + len(messages) < total,
             )
 
         return await self._database.read(read, snapshot=True)
@@ -916,6 +993,8 @@ class Store:
                 found.append(
                     Hit(
                         message_id=said.message_id,
+                        provider_message_id=said.provider_message_id,
+                        edit_version=said.edit_version,
                         thread_id=said.thread_id,
                         conversation=names[said.thread_id][1],
                         kind=said.kind,

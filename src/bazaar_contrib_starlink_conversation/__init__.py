@@ -8,6 +8,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 lazy from collections.abc import AsyncIterator
 
+from bazaar_contrib_agent.command import AGENT_CONFIGURATION
+from bazaar_contrib_channel import CHANNEL_BUILDERS
 from bazaar_contrib_messages import MESSAGES
 from bazaar_contrib_reminder import REMINDER
 from bazaar_contrib_sidecar import RemoteEntry
@@ -23,16 +25,33 @@ CONVERSATION = ServiceKey["Conversations"]("starlink.conversation")
 
 @asynccontextmanager
 async def _conversation(ctx: Context) -> AsyncIterator[None]:
-    ctx.offer(CONVERSATION, Conversations(ctx.accept(DB)))
+    ctx.offer(
+        CONVERSATION,
+        Conversations(
+            ctx.accept(DB),
+            ctx.accept(AGENT_CONFIGURATION),
+            ctx.accept(CHANNEL_BUILDERS),
+        ),
+    )
     yield
 
 
 # the tables read are messages' and reminder's: both start first, and the
 # entry does not start without them
 conversation = Contrib(
-    accepts=[MESSAGES, REMINDER, DB], offers=[CONVERSATION], lifespan=_conversation
+    accepts=[MESSAGES, REMINDER, DB, AGENT_CONFIGURATION, CHANNEL_BUILDERS],
+    offers=[CONVERSATION],
+    lifespan=_conversation,
 )
 remote = RemoteEntry(
     CONVERSATION,
-    ("conversations", "conversation", "history", "search", "attachment", "reminders"),
+    (
+        "conversations",
+        "conversation",
+        "history",
+        "timeline",
+        "search",
+        "attachment",
+        "reminders",
+    ),
 )
