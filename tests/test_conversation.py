@@ -78,6 +78,60 @@ async def session(home: Path) -> None:
     )
 
 
+async def test_external_ids_and_chronological_windows(tmp_path: Path):
+    config = await configure(tmp_path)
+    async with node(config), sidecar() as client:
+        await say(tmp_path, "hanchin", HANCHIN, "早上好")
+        await session(tmp_path)
+        ids = [
+            await say(
+                tmp_path,
+                "shared-room",
+                HANCHIN,
+                text,
+                kind="group",
+                title="Shared room",
+            )
+            for text in ("先核对资料", "再整理安排", "最后确认结果")
+        ]
+        listed = await settled(
+            lambda: call(client, Page, "conversations", "approved"),
+            lambda page: (
+                bool(page.conversations)
+                and page.conversations[0].latest is not None
+                and page.conversations[0].latest.text == "最后确认结果"
+            ),
+        )
+        conversation = listed.conversations[0]
+        assert conversation.provider_thread_id == "shared-room"
+        assert conversation.channel_identity == "cloud-cloud-bot"
+        latest = await call(
+            client, History, "timeline", conversation.thread_id, limit=2
+        )
+        assert [message.provider_message_id for message in latest.messages] == ids[1:]
+        assert latest.has_before and not latest.has_after
+        anchor = latest.messages[0]
+        position = (anchor.at_ms, anchor.provider_message_id, anchor.edit_version or "")
+        before = await call(
+            client,
+            History,
+            "timeline",
+            conversation.thread_id,
+            position=position,
+            side="before",
+        )
+        after = await call(
+            client,
+            History,
+            "timeline",
+            conversation.thread_id,
+            position=position,
+            side="after",
+        )
+        assert [message.body for message in before.messages] == ["先核对资料"]
+        assert [message.body for message in after.messages] == ["最后确认结果"]
+
+
 async def test_the_server_reads_an_agents_conversations(tmp_path: Path):
     config = await configure(tmp_path)
     async with node(config), sidecar() as client:

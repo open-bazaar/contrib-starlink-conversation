@@ -23,6 +23,7 @@ class Sender:
 @dataclass(frozen=True, slots=True)
 class Preview:
     message_id: str
+    direction: Direction
     sender: Sender | None
     sender_kind: SenderKind
     at_ms: int
@@ -32,6 +33,8 @@ class Preview:
 @dataclass(frozen=True, slots=True)
 class Conversation:
     thread_id: str
+    provider_thread_id: str
+    channel_identity: str | None
     name: str | None
     # the peer's, in a DM
     handle: str | None
@@ -82,6 +85,8 @@ class Attachment:
 @dataclass(frozen=True, slots=True)
 class Entry:
     message_id: str
+    provider_message_id: str | None
+    edit_version: str | None
     seq: int
     direction: Direction
     sender: Sender | None
@@ -102,6 +107,8 @@ class History:
 @dataclass(frozen=True, slots=True)
 class Hit:
     message_id: str
+    provider_message_id: str | None
+    edit_version: str | None
     thread_id: str
     conversation: str | None
     kind: Kind
