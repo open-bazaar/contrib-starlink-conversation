@@ -168,6 +168,16 @@ class ChannelBuilderParameters(ChannelBuilderConfig):
     entity_model: ClassVar[type[BaseModel]] = ChannelConfig
     entry: ClassVar[Contrib[Any]] = channel
 
+    @classmethod
+    def conversation_key(
+        cls, target: ChannelTarget, configs: tuple[dict[str, Any], ...] = ()
+    ) -> str | None:
+        return (
+            json.dumps(("switchboard", target.thread_id))
+            if target.kind == "group"
+            else None
+        )
+
 
 @asynccontextmanager
 async def channel_builder_lifespan(ctx: Context, config: ChannelBuilderParameters):
